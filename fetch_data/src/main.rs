@@ -1,80 +1,31 @@
 use reqwest::blocking::get;
 use serde_json::Value;
 use std::io;
-//use byteorder::{BigEndian, ByteOrder};
-//use regex::Regex;
-
-/*fn clean_base64(data: &str) -> String {
-    // Remove all whitespace
-    let re = Regex::new(r"\s+").unwrap();
-    let mut cleaned = re.replace_all(data, "").to_string();
-
-    // If "Signature:" is present, take everything after it
-    if let Some(pos) = cleaned.find("Signature:") {
-        cleaned = cleaned[pos + "Signature:".len()..].to_string();
-    }
-
-    // Pad with '=' to make the length a multiple of 4
-    let padding = (4 - cleaned.len() % 4) % 4;
-    cleaned.push_str(&"=".repeat(padding));
-
-    cleaned
-}
-
-fn read_u32(blob: &[u8], offset: usize) -> (u32, usize) {
-    let value = BigEndian::read_u32(&blob[offset..offset + 4]);
-    (value, offset + 4)
-}
-
-fn read_string(blob: &[u8], offset: usize) -> (&[u8], usize) {
-    let (length, new_offset) = read_u32(blob, offset);
-    let end = new_offset + length as usize;
-    (&blob[new_offset..end], end)
-}
-
-fn peel_mpint(blob: &[u8]) -> &[u8] {
-    if blob.len() > 4 {
-        let len = BigEndian::read_u32(&blob[0..4]) as usize;
-        if len == blob.len() - 4 {
-            return &blob[4..];
-        }
-    }
-    blob
-}
-
-fn parse_ssh_signature(b64_blob: &str) -> Option<(&[u8], &[u8])> {
-    let cleaned = clean_base64(b64_blob);
-    let blob = general_purpose::STANDARD.decode(cleaned).ok()?;
-
-    if &blob[0..6] != b"SSHSIG" {
-        eprintln!("Bad magic: {:?}", &blob[0..6]);
-        return None;
-    }
-
-    let mut off = 6;
-    let (_, new_off) = read_uint32(&blob, off); // skip version
-    off = new_off;
-
-    let (pub_blob, new_off) = read_string(&blob, off);
-    off = new_off;
-    let (_, new_off) = read_string(&blob, off);
-    off = new_off;
-    let (_, new_off) = read_string(&blob, off);
-    off = new_off;
-    let (_, new_off) = read_string(&blob, off);
-    off = new_off;
-
-    let (sig_blob, _) = read_string(&blob, off);
-    let (_, sig_off2) = read_string(sig_blob, 0);
-    let (sig_mpint, _) = read_string(sig_blob, sig_off2);
-
-    Some((pub_blob, peel_mpint(sig_mpint)))
-}
-
-fn parse_rsa_public_key(pk::String) -> ()*/
+use sha2::{Sha256, Sha512, Digest};
+use serde::{Serialize, Deserialize};
 
 use base64::decode;
 use std::error::Error;
+
+const BLOCK_SIZE :usize = 35;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+
+struct PublicSignals{
+
+    message_hash: Vec<u128>,
+    keys: Vec<Vec<u128>>
+    
+}
+
+impl PublicSignals{
+    pub fn new() -> Self{
+        Self{
+            message_hash: Vec:: new(),
+            keys: Vec::new()
+        }
+    }
+}
 
 fn convert_byte_to_n(n : i32, array: Vec<u8>) -> Vec<u128>{
     //works with 128 > n > 8
@@ -105,6 +56,15 @@ fn convert_byte_to_n(n : i32, array: Vec<u8>) -> Vec<u128>{
         new_array.push(current_val);
     }
     new_array
+}
+
+fn pad_number_to_k(k: usize, array: &mut Vec<u128>){
+
+    if array.len() < k {
+        for _ in array.len() .. k {
+            array.push(0);
+        }
+    }
 }
 
 fn extract_rsa_from_ssh(ssh_key: &str) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>> {
@@ -180,26 +140,92 @@ fn extract_rsa_from_ssh(ssh_key: &str) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Err
     Ok((n, e))
 }
 
+fn parce_keys(all_data: &str) -> Vec<String>{
+    let mut key_list: Vec<&str> = all_data.trim().split("ssh-").collect();
+    let mut result : Vec<String> = Vec::new();
+    for key in key_list{
+        if key != ""{
+            let mut parts: Vec<&str> = key.trim().split_whitespace().collect();
+            if parts[0].starts_with("rsa") {
+                let mut key = "ssh-rsa ".to_owned() + parts[1] + "\n";
+                result.push(key.to_string());
+            }
+        }
+    }
+    result
+}
 
-fn main(){
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    let address = format!("{}{}{}", "https://github.com/", input.trim(), ".keys");
+fn get_and_process_username(username : &str) -> Result<Vec<Vec<u128>>, Box<dyn Error>> {
+    let address = format!("{}{}{}", "https://github.com/", username, ".keys");
+    let mut result : Vec<Vec<u128>> = Vec::new();
     println!("{}", address);
     match get(&address) {
         Ok(response) => {
             if response.status().is_success() {
                 match response.text() {
                     Ok(body) => {
-                        let extracted_key = extract_rsa_from_ssh(&body).unwrap();
-                        println!("Response:\n{}\nExtracted N: {:?}\nExtracted E: {:?}\n", &body[7..],  convert_byte_to_n(120, extracted_key.0), convert_byte_to_n(120, extracted_key.1));
+                        let mut list_keys = parce_keys(&body);
+                        for key in list_keys{
+                            let extracted_key = extract_rsa_from_ssh(&key).unwrap();
+                            let mut convert = convert_byte_to_n(120, extracted_key.0);
+                            pad_number_to_k(35 as usize, &mut convert);
+                            result.push(convert);
+                        }
+                        return Ok(result);
                     },
-                        Err(err) => eprintln!("Error reading response: {}", err),
+                    Err(_err) =>{
+                        return Err("Error reading response".into());
+                    }
                 }
             } else {
-                eprintln!("Request failed with status: {}", response.status());
+                return Err("Request failed".into());
             }
+
         }
-        Err(err) => eprintln!("Request error: {}", err),
+        Err(_err) => {
+            return Err("Request error".into());
+        }
     }
+}
+
+fn create_pb_signals_struct(list_usernames: Vec<&str>, message: &str) -> PublicSignals{
+    let mut hasher = Sha512::new();
+    hasher.update(message.as_bytes());
+    let mut message_hash = convert_byte_to_n(120, hasher.finalize().to_vec());
+    pad_number_to_k(5, &mut message_hash);
+    let mut result = PublicSignals::new();
+    result.message_hash = message_hash;
+    for username in list_usernames{
+        let keys = get_and_process_username(username).unwrap();
+        for key in keys{
+            result.keys.push(key);
+        }
+    }
+    return result;
+}
+
+fn convert_publicSignals(pb_signals: PublicSignals) -> Vec<String>{
+    let mut result : Vec<String> = Vec::new();
+    for block in pb_signals.message_hash{
+        result.push(block.to_string());
+    }
+    
+    for key in pb_signals.keys{
+        for block in key{
+            result.push(block.to_string());
+        }
+    } 
+    result
+}
+
+fn create_pb_signals(list_usernames: Vec<&str>, message: &str) -> Vec<String>{
+    convert_publicSignals(create_pb_signals_struct(list_usernames, message))
+}
+
+fn main(){
+    /*let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    let username = input.trim();
+    let input : Vec<&str> = vec!["lizahorokh", "Welbo"];
+    println!("{:?}",create_pb_signals_struct(input, "hello, 0xparc!"));*/
 }

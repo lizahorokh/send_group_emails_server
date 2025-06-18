@@ -1,0 +1,9 @@
+C:\0xPARC\RUST\send_group_emails_server\server_setup\target\debug\deps\libserde_path_to_error-3915a34111290bbc.rmeta: C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\lib.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\de.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\path.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\ser.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\wrap.rs
+
+C:\0xPARC\RUST\send_group_emails_server\server_setup\target\debug\deps\serde_path_to_error-3915a34111290bbc.d: C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\lib.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\de.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\path.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\ser.rs C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\wrap.rs
+
+C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\lib.rs:
+C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\de.rs:
+C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\path.rs:
+C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\ser.rs:
+C:\Users\forpr\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_path_to_error-0.1.17\src\wrap.rs:
