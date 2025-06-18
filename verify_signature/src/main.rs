@@ -36,19 +36,11 @@ impl fmt::Display for VerificationError {
 }
 
 // Main verification function
-pub async fn verify_proof() -> Result<bool, VerificationError> {
+pub async fn verify_proof(proof_str: &String, public_str: &String) -> Result<bool, VerificationError> {
     // ---------- 1. Load the three files asynchronously -------------------
-    let (proof_js, vk_js, public_inputs) = {
-        // These awaits can run concurrently if you like:
-        let proof_str = read_to_string("proof.json")
-            .await
-            .map_err(|e| VerificationError::FileReadError(e.to_string()))?;
+    let (vk_js, public_inputs) = {
 
         let vk_str = read_to_string("verification_key.json")
-            .await
-            .map_err(|e| VerificationError::FileReadError(e.to_string()))?;
-
-        let public_str = read_to_string("public.json")
             .await
             .map_err(|e| VerificationError::FileReadError(e.to_string()))?;
 
