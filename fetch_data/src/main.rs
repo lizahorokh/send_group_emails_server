@@ -180,7 +180,7 @@ fn extract_rsa_from_ssh(ssh_key: &str) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Err
     Ok((n, e))
 }
 
-fn get_and_process_username() -> Result
+
 fn main(){
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
