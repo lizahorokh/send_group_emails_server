@@ -1,10 +1,13 @@
 use axum::{Router, routing::{get, post}, extract::{State, Json}};
 use serde::{Serialize, Deserialize};
 use std::{sync::{Arc, Mutex}, net::SocketAddr};
+use serde_json;
 use tokio::net::TcpListener;
 use lettre::message::{header, Message};
 use lettre::{SmtpTransport, Transport, transport::smtp::authentication::Credentials};
 
+use fetch_data_lib :: {create_pb_signals};
+use verify_proof_lib :: {verify_proof};
 
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -23,20 +26,37 @@ async fn send_list_emails(State(emal_list): State<EmailDatabase>) -> Json<Vec<Em
     Json(data.clone())   
 }
 
+async fn create_the_message(list_senders: Vec<String>, message : String) -> String{
+    let mut result :String = "".to_string();
+    result = message + "\n Best, \n Participant of a group : \n";
+    for sender in list_senders{
+        result = result + &sender + "\n";
+    }
+    result 
+}
+
 async fn receive_email(State(emal_list): State<EmailDatabase>, Json(email): Json<Email>) -> String{
-    if email.group_signature == "I know a password".to_string(){
+    let to_addr  = email.to.clone()                     
+        .unwrap_or_else(|| "for.proga2@gmail.com".into());
+
+    let subject   = email.header.clone();      // or borrow &email.header
+    let body_text = email.message.clone();
+    let pb_signals: Vec<String> = create_pb_signals(email.senders.clone(), &email.message.clone()).await;
+    //let mut text = create_the_message(email.senders.clone(), email.message.clone()).await;
+    println!("Got public signals {pb_signals:?}");
+    if verify_proof(&email.group_signature, &serde_json::to_string(&pb_signals).unwrap(),  &"../verification_key.json".to_string()).await.unwrap(){
         let mut data = emal_list.lock().unwrap();
         data.push(email.clone());
-        let email = Message::builder()
+        let letter = Message::builder()
                             .from("0xparc.group.signature@gmail.com".parse().unwrap())
-                            .to(email.to.unwrap_or("for.proga2@gmail.com".to_string()).parse().unwrap())
-                            .subject(email.header)
+                            .to(to_addr.parse().unwrap())
+                            .subject(subject)
                             .header(header::ContentType::TEXT_PLAIN)
-                            .body(email.message)
+                            .body(body_text)
                             .unwrap();
         let creds = Credentials::new("0xparc.group.signature@gmail.com".into(), "ybng swmx ioor ehwg".into());
         let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
-        match mailer.send(&email){
+        match mailer.send(&letter){
             Ok(response) => {
                 format!("Email sent! Server said: {:?}", response) }
             Err(e) => {

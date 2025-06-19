@@ -8,4 +8,6 @@ axum = "0.8.4"
 lettre = { version = "0.10", features = ["smtp-transport", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
-
+fetch_data_lib = {path = "../fetch_data_lib"}
+verify_proof_lib = { path = "../verify_proof_lib"}
+serde_json = "1.0.140"
