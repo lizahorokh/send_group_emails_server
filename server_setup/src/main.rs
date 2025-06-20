@@ -30,33 +30,46 @@ async fn create_the_message(list_senders: Vec<String>, message : String) -> Stri
 
 async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): Json<Email>) -> String{
     let to_addr  = email.to.clone().unwrap_or_else(|| "for.proga2@gmail.com".into());
-    //println!("List of senders: {:?}", email.senders);
     let subject   = email.header.clone();      // or borrow &email.header
-    let body_text = email.message.clone();
-    let pb_signals: Vec<String> = create_pb_signals(email.senders.clone(), &email.message.clone()).await;
-    //let mut text = create_the_message(email.senders.clone(), email.message.clone()).await;
+    let pb_signals = match create_pb_signals(email.senders.clone(), &email.message.clone()).await {
+        Ok(body)  => body,
+        Err(err) => return format!("Sorry, could not process your request. \n {err}"),
+    };
+    let mut text = create_the_message(email.senders.clone(), email.message.clone()).await;
     println!("Got public signals {pb_signals:?}");
-    if verify_proof(&email.group_signature, &serde_json::to_string(&pb_signals).unwrap(),  &"../verification_key.json".to_string()).await.unwrap(){
-        let email_id = insert_email_to_database(&database_conn.lock().unwrap(), &email).unwrap();
-        let letter = Message::builder()
-                            .from("0xparc.group.signature@gmail.com".parse().unwrap())
-                            .to(to_addr.parse().unwrap())
-                            .subject(subject)
-                            .header(header::ContentType::TEXT_PLAIN)
-                            .body(body_text + &format!("\n \n Date: {} \n Email id: {}", email.date, email_id)) // Todo: Insert Date, Group Signature, email id
-                            .unwrap();
-        let creds = Credentials::new("0xparc.group.signature@gmail.com".into(), "ybng swmx ioor ehwg".into());
-        let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
-        match mailer.send(&letter){
-            Ok(response) => {
-                format!("Email sent! Server said: {:?}", response) }
-            Err(e) => {
-                format!("Failed to send email: {:#?}", e)
+    let input_pb_signals = match serde_json::to_string(&pb_signals){
+        Ok(body) => body,
+        Err(err) => return format!("Error processing public signals. Check the input fomating."),
+    };
+    let flag = verify_proof(&email.group_signature, &input_pb_signals,  &"../verification_key.json".to_string()).await;
+    println!("Here");
+    match flag {
+        Ok(body) => { 
+            if body {
+                let email_id = insert_email_to_database(&database_conn.lock().unwrap(), &email).unwrap();
+                let letter = Message::builder()
+                                    .from("0xparc.group.signature@gmail.com".parse().unwrap())
+                                    .to(to_addr.parse().unwrap())
+                                    .subject(subject)
+                                    .header(header::ContentType::TEXT_PLAIN)
+                                    .body(text + &format!("\n \n Date: {} \n Email id: {}", email.date, email_id))
+                                    .unwrap();
+                let creds = Credentials::new("0xparc.group.signature@gmail.com".into(), "ybng swmx ioor ehwg".into());
+                let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
+                match mailer.send(&letter){
+                    Ok(response) => {
+                        return format!("Email sent! Server said: {:?}", response); },
+                    Err(e) => {
+                        return format!("Failed to send email: {:#?}", e);
+                    }
+                };
+            } else {
+                return format!("Sorry, signature is incorrect");
             }
-        }
-    } else {
-        format!("Sorry, signature is incorrect")
-    }
+        },
+        Err(err) => return format!("Sorry, could not verify proof due to the {err}."),
+    };
+    return "End of the function".to_string();
 }
 
 #[tokio::main]
