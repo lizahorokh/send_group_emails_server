@@ -61,7 +61,7 @@ async fn convert_byte_to_n(n : i32, array: Vec<u8>) -> Vec<u128>{
 }
 
 async fn convert_byte_to_chunks_alternative(num_bits: u32, num_chunks: u32, array: Vec<u8>) -> Vec<u128>{
-    let mut big_int : BigUint = BigUint::from_bytes_le(array[..].try_into().unwrap());
+    let mut big_int : BigUint = BigUint::from_bytes_be(array[..].try_into().unwrap());
     let mut res : Vec<u128> = Vec::new();
     for i in 0 .. num_chunks {
         let curr : u128 = (big_int.clone() % (1u128 << num_bits.clone())).to_u128().unwrap();
