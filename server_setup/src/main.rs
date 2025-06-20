@@ -21,11 +21,10 @@ async fn send_list_emails(State(database_conn): State<EmailDatabase>) -> Json<Ve
 
 async fn create_the_message(list_senders: Vec<String>, message : String) -> String{
     let mut result :String = "".to_string();
-    result = message + "\n Best, \n Participant of a group : \n";
+    result = message + "\nBest, \nParticipant of a group : \n";
     for sender in list_senders{
         result = result + &sender + "\n";
-    }
-    result 
+    }    result 
 }
 
 async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): Json<Email>) -> String{
@@ -52,7 +51,7 @@ async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): 
                                     .to(to_addr.parse().unwrap())
                                     .subject(subject)
                                     .header(header::ContentType::TEXT_PLAIN)
-                                    .body(text + &format!("\n \n Date: {} \n Email id: {}", email.date, email_id))
+                                    .body(text + &format!("\n \n Date: {} \n Email id: {} \n \n Group Signature: {} \n (Trust us bro)", email.date, email_id, &email.group_signature))
                                     .unwrap();
                 let creds = Credentials::new("0xparc.group.signature@gmail.com".into(), "ybng swmx ioor ehwg".into());
                 let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();

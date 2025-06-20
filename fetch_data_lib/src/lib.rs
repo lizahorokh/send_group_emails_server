@@ -2,7 +2,7 @@ use reqwest::get;
 use num_traits::cast::ToPrimitive;
 use num_bigint::BigUint;
 use serde_json::Value;
-use std::io;
+use std::{char::MAX, io};
 use anyhow::{anyhow, Result};
 use sha2::{Sha256, Sha512, Digest};
 use serde::{Serialize, Deserialize};
@@ -11,7 +11,7 @@ use base64::decode;
 use std::error::Error;
 
 const BLOCK_SIZE :usize = 35;
-
+const MAX_GROUP_SIZE : usize = 300;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 
 pub struct PublicSignals{
@@ -182,12 +182,20 @@ pub async fn create_pb_signals_struct(list_usernames: Vec<String>, message: &str
     };
     let mut result = PublicSignals::new();
     result.message_hash = message_hash;
-    for username in list_usernames{
+    let mut sorted_usernames: Vec<String> = list_usernames.clone();
+    sorted_usernames.sort();
+    for username in sorted_usernames{
         let keys = get_and_process_username(username.clone()).await?;
         println!("username {username:?} is processed");
         for key in keys{
             result.keys.push(key);
         }
+    }
+    if result.keys.len() > MAX_GROUP_SIZE {
+        return Err(anyhow!("Too many keys in the group. Maximum is {MAX_GROUP_SIZE}."));
+    }  
+    while (result.keys.len() < MAX_GROUP_SIZE){
+        result.keys.push(result.keys[0].clone());
     }
     return Ok(result);
 }
