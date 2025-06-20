@@ -5,24 +5,17 @@ use serde_json;
 use tokio::net::TcpListener;
 use lettre::message::{header, Message};
 use lettre::{SmtpTransport, Transport, transport::smtp::authentication::Credentials};
-
+use rusqlite::{params, Connection, Result};
 use fetch_data_lib :: {create_pb_signals};
 use verify_proof_lib :: {verify_proof};
+use database_lib::{Email, create_table, insert_email_to_database, get_email_from_database, list_all_emails_in_database};
 
 
-#[derive(Debug, Deserialize, Clone, Serialize)]
-struct Email{
-    to: Option<String>,
-    header: String,
-    message: String,
-    senders: Vec<String>,
-    group_signature: String,
-}
-
-type EmailDatabase = Arc<Mutex<Vec<Email>>>;
-
-async fn send_list_emails(State(emal_list): State<EmailDatabase>) -> Json<Vec<Email>> {
-    let data = emal_list.lock().unwrap(); // Access the vector
+type EmailDatabase = Arc<Mutex<Connection>>;
+// show all emails in database
+//todo: add better error handling
+async fn send_list_emails(State(database_conn): State<EmailDatabase>) -> Json<Vec<Email>> {
+    let data = list_all_emails_in_database(&database_conn.lock().unwrap()).unwrap(); // Access the vector
     Json(data.clone())   
 }
 
@@ -35,7 +28,7 @@ async fn create_the_message(list_senders: Vec<String>, message : String) -> Stri
     result 
 }
 
-async fn receive_email(State(emal_list): State<EmailDatabase>, Json(email): Json<Email>) -> String{
+async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): Json<Email>) -> String{
     let to_addr  = email.to.clone().unwrap_or_else(|| "for.proga2@gmail.com".into());
     //println!("List of senders: {:?}", email.senders);
     let subject   = email.header.clone();      // or borrow &email.header
@@ -44,14 +37,13 @@ async fn receive_email(State(emal_list): State<EmailDatabase>, Json(email): Json
     //let mut text = create_the_message(email.senders.clone(), email.message.clone()).await;
     println!("Got public signals {pb_signals:?}");
     if verify_proof(&email.group_signature, &serde_json::to_string(&pb_signals).unwrap(),  &"../verification_key.json".to_string()).await.unwrap(){
-        let mut data = emal_list.lock().unwrap();
-        data.push(email.clone());
+        let email_id = insert_email_to_database(&database_conn.lock().unwrap(), &email).unwrap();
         let letter = Message::builder()
                             .from("0xparc.group.signature@gmail.com".parse().unwrap())
                             .to(to_addr.parse().unwrap())
                             .subject(subject)
                             .header(header::ContentType::TEXT_PLAIN)
-                            .body(body_text)
+                            .body(body_text + &format!("\n \n Date: {} \n Email id: {}", email.date, email_id)) // Todo: Insert Date, Group Signature, email id
                             .unwrap();
         let creds = Credentials::new("0xparc.group.signature@gmail.com".into(), "ybng swmx ioor ehwg".into());
         let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
@@ -69,11 +61,12 @@ async fn receive_email(State(emal_list): State<EmailDatabase>, Json(email): Json
 
 #[tokio::main]
 async fn main() {
-    let emails : EmailDatabase = Arc::new(Mutex::new(Vec::new()));
+    let database: EmailDatabase =  Arc::new(Mutex::new(Connection::open("emails.db").expect("Failed to open database")));
+    create_table(&database.lock().unwrap()).expect("Failed to create table");
     let router = Router::new()
                     .route("/", get(send_list_emails))
                     .route("/", post(receive_email))
-                    .with_state(emails);
+                    .with_state(database);
 
     let addr = SocketAddr::from(([127,0,0,1], 8000));
     let tcp = TcpListener::bind(&addr).await.unwrap();
