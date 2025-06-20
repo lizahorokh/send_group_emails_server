@@ -1,4 +1,6 @@
-use reqwest::blocking::get;
+use reqwest::get;
+use num_traits::cast::ToPrimitive;
+use num_bigint::BigUint;
 use serde_json::Value;
 use std::io;
 use sha2::{Sha256, Sha512, Digest};
@@ -43,19 +45,32 @@ async fn convert_byte_to_n(n : i32, array: Vec<u8>) -> Vec<u128>{
                     current_val = 0;
                 }
             }
-            current_val = current_val * 256 + array[i as usize] as u128;
+            current_val = current_val + (array[i as usize] as u128) << (current_index % n);
         }
         else{
             left = (n - current_index % n) % n;
-            current_val = current_val * (1 << left) + array[i as usize] as u128 / ( 1 << (8 - left));
+            current_val = current_val + (array[i as usize] as u128 % ( 1 << left)) << (current_index % n);
             new_array.push(current_val);
-            current_val = array[i as usize] as u128 % ( 1 << (8 - left));
+            current_val = array[i as usize] as u128 / ( 1 << left);
         }
     }
     if current_val != 0{
         new_array.push(current_val);
     }
     new_array
+}
+
+async fn convert_byte_to_chunks_alternative(num_bits: u32, num_chunks: u32, array: Vec<u8>) -> Vec<u128>{
+    let mut big_int : BigUint = BigUint::from_bytes_le(array[..].try_into().unwrap());
+    let mut res : Vec<u128> = Vec::new();
+    for i in 0 .. num_chunks {
+        let curr : u128 = (big_int.clone() % (1u128 << num_bits.clone())).to_u128().unwrap();
+        res.push(curr);
+        big_int = big_int >> num_bits.clone();
+    }
+    // make sure that num_chunks is enough to cover the whole number
+    assert!(big_int == BigUint::from(0u32));
+    res
 }
 
 async fn pad_number_to_k(k: usize, array: &mut Vec<u128>){
@@ -162,13 +177,13 @@ pub async fn get_and_process_username(username : String) -> Result<Vec<Vec<u128>
     match get(&address).await {
         Ok(response) => {
             if response.status().is_success() {
-                match response.text() {
+                match response.text().await {
                     Ok(body) => {
                         let mut list_keys = parce_keys(&body).await;
                         for key in list_keys{
                             let extracted_key = extract_rsa_from_ssh(&key).await.unwrap();
-                            let mut convert = convert_byte_to_n(120, extracted_key.0).await;
-                            pad_number_to_k(35 as usize, &mut convert).await;
+                            let mut convert = convert_byte_to_chunks_alternative(120, 35, extracted_key.0).await;
+                            //pad_number_to_k(35 as usize, &mut convert).await;
                             result.push(convert);
                         }
                         return Ok(result);
@@ -191,8 +206,8 @@ pub async fn get_and_process_username(username : String) -> Result<Vec<Vec<u128>
 pub async fn create_pb_signals_struct(list_usernames: Vec<String>, message: &str) -> PublicSignals{
     let mut hasher = Sha512::new();
     hasher.update(message.as_bytes());
-    let mut message_hash = convert_byte_to_n(120, hasher.finalize().to_vec()).await;
-    pad_number_to_k(5, &mut message_hash).await;
+    let mut message_hash = convert_byte_to_chunks_alternative(120, 5, hasher.finalize().to_vec()).await;
+    //pad_number_to_k(5, &mut message_hash).await;
     let mut result = PublicSignals::new();
     result.message_hash = message_hash;
     for username in list_usernames{

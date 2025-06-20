@@ -36,9 +36,8 @@ async fn create_the_message(list_senders: Vec<String>, message : String) -> Stri
 }
 
 async fn receive_email(State(emal_list): State<EmailDatabase>, Json(email): Json<Email>) -> String{
-    let to_addr  = email.to.clone()                     
-        .unwrap_or_else(|| "for.proga2@gmail.com".into());
-
+    let to_addr  = email.to.clone().unwrap_or_else(|| "for.proga2@gmail.com".into());
+    //println!("List of senders: {:?}", email.senders);
     let subject   = email.header.clone();      // or borrow &email.header
     let body_text = email.message.clone();
     let pb_signals: Vec<String> = create_pb_signals(email.senders.clone(), &email.message.clone()).await;
