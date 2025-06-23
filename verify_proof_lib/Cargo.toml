@@ -18,3 +18,4 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 ark-ec      = "0.5"   # ← new
 anyhow      = "1"     # ← new
+panic = "0.4.0"

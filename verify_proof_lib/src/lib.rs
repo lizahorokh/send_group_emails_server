@@ -8,6 +8,7 @@ use std::fmt;
 use std::str::FromStr;  // Add this import for from_str
 use std::process::Command;
 use tokio::fs::read_to_string;
+use std::panic;
 
 use anyhow::Result;
 
@@ -86,8 +87,12 @@ pub async fn verify_proof(proof_str: &String, public_str: &String, verification_
     };
     // ---------- 3. Verify ------------------------------------------------
     let pvk: PreparedVerifyingKey<E> = prepare_verifying_key(&vk);
-    let verified = Groth16::<E>::verify_proof(&pvk, &proof, &public_inputs)
-        .map_err(|_| VerificationError::VerificationFailed)?;
-
-    Ok(verified) // true = valid, false = proof failed
+    let verified = panic::catch_unwind( || {Groth16::<E>::verify_proof(&pvk, &proof, &public_inputs)
+        .map_err(|_| VerificationError::VerificationFailed)});
+    match verified {
+    Ok(Ok(result)) => Ok(result),
+    Ok(Err(e)) => Err(e),
+    Err(_) => Err(VerificationError::InvalidProofFormat),
+    }
+    //Ok(verified) // true = valid, false = proof failed
 }
