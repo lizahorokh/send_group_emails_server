@@ -1,3 +1,8 @@
+//! Utility functions for fetching GitHub users' RSA public keys and constructing
+//! the `publicSignals` array expected by the Circom/zk-SNARK circuit. All
+//! helpers are `async` where network or heavy computation is involved and can
+//! therefore be called inside an asynchronous runtime (e.g. Tokio).
+
 use reqwest::get;
 use num_traits::cast::ToPrimitive;
 use num_bigint::BigUint;
@@ -12,8 +17,17 @@ use std::error::Error;
 
 const BLOCK_SIZE :usize = 35;
 const MAX_GROUP_SIZE : usize = 300;
-#[derive(Debug, Clone, Serialize, Deserialize)]
 
+/// Represents the data that will be passed to the circuit as `publicSignals`.
+///
+/// Fields
+/// -------
+/// * `message_hash` – SHA-512 digest of the message split into five 120-bit
+///   limbs.
+/// * `keys` – A collection of **exactly** `MAX_GROUP_SIZE` RSA public keys
+///   (padded if necessary). Each key is itself split into 35 limbs of
+///   120-bit width.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicSignals{
 
     message_hash: Vec<u128>,
@@ -30,7 +44,13 @@ impl PublicSignals{
     }
 }
 
-
+/// Converts an arbitrary-sized big-endian integer represented by `array` into a
+/// vector of `num_chunks` limbs where each limb is `num_bits` bits wide. The
+/// limbs are ordered little-endian (least-significant limb first) because this
+/// is the format expected by most Circom gadgets.
+///
+/// Returns an error if the integer does not fit into the provided number of
+/// chunks.
 async fn convert_byte_to_chunks(num_bits: u32, num_chunks: u32, array: Vec<u8>) -> anyhow::Result<Vec<u128>>{
     let mut big_int : BigUint = BigUint::from_bytes_be(array[..].try_into().unwrap());
     let mut res : Vec<u128> = Vec::new();
@@ -41,11 +61,20 @@ async fn convert_byte_to_chunks(num_bits: u32, num_chunks: u32, array: Vec<u8>) 
     }
     // make sure that num_chunks is enough to cover the whole number
     if big_int != BigUint::from(0u32) {
-        return Err(anyhow!("Can not convert number, number is too large."));
+        return Err(anyhow!(
+            "Cannot convert number: value does not fit into {} chunks of {} bits",
+            num_chunks,
+            num_bits
+        ));
     }
     Ok(res)
 }
 
+/// Parses an SSH-formatted RSA public key (the `ssh-rsa AAAAB3...` string) and
+/// extracts the modulus `n` and exponent `e` in raw big-endian byte form.
+///
+/// The function performs basic validation on the key structure and returns
+/// detailed errors when the format is unexpected.
 pub async fn extract_rsa_from_ssh(ssh_key: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let parts: Vec<&str> = ssh_key.trim().split_whitespace().collect();
     if parts.len() < 2 {
@@ -119,6 +148,8 @@ pub async fn extract_rsa_from_ssh(ssh_key: &str) -> anyhow::Result<(Vec<u8>, Vec
     Ok((n, e))
 }
 
+/// Splits the body returned by GitHub's `https://github.com/<user>.keys` API
+/// into individual *RSA* keys (other key types are ignored).
 pub async fn parce_keys(all_data: &str) -> anyhow::Result<Vec<String>>{
     let mut key_list: Vec<&str> = all_data.trim().split("ssh-").collect();
     let mut result : Vec<String> = Vec::new();
@@ -126,7 +157,9 @@ pub async fn parce_keys(all_data: &str) -> anyhow::Result<Vec<String>>{
         if key != ""{
             let mut parts: Vec<&str> = key.trim().split_whitespace().collect();
             if parts.len() < 2 {
-                return Err(anyhow!("Could not read the github keys. Check the formating."));
+                return Err(anyhow!(
+                    "Unable to parse GitHub SSH keys: unexpected formatting detected"
+                ));
             }
             if parts[0].starts_with("rsa") {
                 let mut key = "ssh-rsa ".to_owned() + parts[1] + "\n";
@@ -137,10 +170,11 @@ pub async fn parce_keys(all_data: &str) -> anyhow::Result<Vec<String>>{
     Ok(result)
 }
 
+/// Downloads all RSA public keys of a GitHub user, extracts their moduli and
+/// converts them into 120-bit limb representation suitable for the circuit.
 pub async fn get_and_process_username(username : String) -> anyhow::Result<Vec<Vec<u128>>> {
     let address = format!("{}{}{}", "https://github.com/", username, ".keys");
     let mut result : Vec<Vec<u128>> = Vec::new();
-    println!("{}", address);
     match get(&address).await {
         Ok(response) => {
             if response.status().is_success() {
@@ -151,7 +185,13 @@ pub async fn get_and_process_username(username : String) -> anyhow::Result<Vec<V
                             let extracted_key = extract_rsa_from_ssh(&key).await?;
                             let mut convert = match convert_byte_to_chunks(120, 35, extracted_key.0).await {
                                 Ok(body) => body ,
-                                Err(err) => return Err(anyhow!("Error {err} reading the keys of {username}. Check the username again.")),
+                                Err(err) => {
+                                    return Err(anyhow!(
+                                        "Failed to convert key chunks for user '{}': {}",
+                                        username,
+                                        err
+                                    ))
+                                },
                             };
 
                             result.push(convert);
@@ -159,20 +199,30 @@ pub async fn get_and_process_username(username : String) -> anyhow::Result<Vec<V
                         return Ok(result);
                     },
                     Err(err) =>{
-                        return Err(anyhow!("Error {err} reading the keys of {username}. Check the username again."));
+                        return Err(anyhow!(
+                            "Error while downloading keys for user '{}': {}",
+                            username,
+                            err
+                        ));
                     }
                 }
             } else {
-                return Err(anyhow!("Request failed. Check Internet connection."));
+                return Err(anyhow!(
+                    "GitHub returned a non-success status code for user '{}'",
+                    username
+                ));
             }
 
         }
         Err(err) => {
-            return Err(anyhow!("Request error: {err}"));
+            return Err(anyhow!("HTTP request error: {}", err));
         }
     }
 }
 
+/// High-level helper that, given a list of GitHub usernames and a plain-text
+/// `message`, constructs a fully-populated `PublicSignals` instance ready for
+/// proof generation.
 pub async fn create_pb_signals_struct(list_usernames: Vec<String>, message: &str) -> anyhow::Result<PublicSignals>{
     let mut hasher = Sha512::new();
     hasher.update(message.as_bytes());
@@ -186,13 +236,15 @@ pub async fn create_pb_signals_struct(list_usernames: Vec<String>, message: &str
     sorted_usernames.sort();
     for username in sorted_usernames{
         let keys = get_and_process_username(username.clone()).await?;
-        println!("username {username:?} is processed");
         for key in keys{
             result.keys.push(key);
         }
     }
     if result.keys.len() > MAX_GROUP_SIZE {
-        return Err(anyhow!("Too many keys in the group. Maximum is {MAX_GROUP_SIZE}."));
+        return Err(anyhow!(
+            "Too many keys in the group: maximum allowed is {}",
+            MAX_GROUP_SIZE
+        ));
     }  
     while (result.keys.len() < MAX_GROUP_SIZE){
         result.keys.push(result.keys[0].clone());
@@ -200,6 +252,8 @@ pub async fn create_pb_signals_struct(list_usernames: Vec<String>, message: &str
     return Ok(result);
 }
 
+/// Flattens the nested `PublicSignals` structure into a single `Vec<String>` so
+/// that it can be passed directly to snarkJS or a Circom verifier.
 pub async fn convert_publicSignals(pb_signals: PublicSignals) -> Vec<String>{
     let mut result : Vec<String> = Vec::new();
     for block in pb_signals.message_hash{
@@ -212,10 +266,10 @@ pub async fn convert_publicSignals(pb_signals: PublicSignals) -> Vec<String>{
         }
     } 
     result
-
-
 }
 
+/// Convenience wrapper that combines `create_pb_signals_struct` and
+/// `convert_publicSignals` in one call.
 pub async fn create_pb_signals(list_usernames: Vec<String>, message: &str) -> anyhow::Result<Vec<String>>{
     Ok(convert_publicSignals(create_pb_signals_struct(list_usernames, message).await?).await)
 }
