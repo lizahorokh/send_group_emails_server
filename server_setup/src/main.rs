@@ -28,32 +28,32 @@ async fn create_the_message(list_senders: Vec<String>, message : String) -> Stri
 }
 
 async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): Json<Email>) -> String{
-    let to_addr  = email.to.clone().unwrap_or_else(|| "for.proga2@gmail.com".into());
+    let to_addr  = email.to.clone().unwrap_or_else(|| "sansome-talk@0xparc.org".into());
     let subject   = email.header.clone();      // or borrow &email.header
     let pb_signals = match create_pb_signals(email.senders.clone(), &email.message.clone()).await {
         Ok(body)  => body,
         Err(err) => return format!("Sorry, could not process your request. \n {err}"),
     };
     let mut text = create_the_message(email.senders.clone(), email.message.clone()).await;
-    println!("Got public signals {pb_signals:?}");
     let input_pb_signals = match serde_json::to_string(&pb_signals){
         Ok(body) => body,
         Err(err) => return format!("Error processing public signals. Check the input fomating."),
     };
     let flag = verify_proof(&email.group_signature, &input_pb_signals,  &"../verification_key.json".to_string()).await;
-    println!("Here");
+   
     match flag {
         Ok(body) => { 
             if body {
                 let email_id = insert_email_to_database(&database_conn.lock().unwrap(), &email).unwrap();
+                
                 let letter = Message::builder()
-                                    .from("0xparc.group.signature@gmail.com".parse().unwrap())
+                                    .from("kudos@0xparc.org".parse().unwrap())
                                     .to(to_addr.parse().unwrap())
                                     .subject(subject)
                                     .header(header::ContentType::TEXT_PLAIN)
                                     .body(text + &format!("\n \n Date: {} \n Email id: {} \n \n Group Signature: {} \n (Trust us bro)", email.date, email_id, &email.group_signature))
                                     .unwrap();
-                let creds = Credentials::new("0xparc.group.signature@gmail.com".into(), "ybng swmx ioor ehwg".into());
+                let creds = Credentials::new("kudos@0xparc.org".into(), "szmi aljp ugko evld".into());
                 let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
                 match mailer.send(&letter){
                     Ok(response) => {
@@ -75,6 +75,7 @@ async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): 
 async fn main() {
     let database: EmailDatabase =  Arc::new(Mutex::new(Connection::open("emails.db").expect("Failed to open database")));
     create_table(&database.lock().unwrap()).expect("Failed to create table");
+    
     let router = Router::new()
                     .route("/", get(send_list_emails))
                     .route("/", post(receive_email))
