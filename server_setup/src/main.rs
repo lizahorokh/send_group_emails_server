@@ -9,7 +9,16 @@ use rusqlite::{params, Connection, Result};
 use fetch_data_lib :: {create_pb_signals};
 use verify_proof_lib :: {verify_proof};
 use database_lib::{Email, create_table, insert_email_to_database, get_email_from_database, list_all_emails_in_database};
+use chrono::prelude::*;
 
+#[derive(Debug, Deserialize, Clone, Serialize, PartialEq)]
+pub struct EmailReceived{
+    pub to: Option<String>, 
+    pub header: String,
+    pub message: String,
+    pub senders: Vec<String>,
+    pub group_signature: String
+}
 
 type EmailDatabase = Arc<Mutex<Connection>>;
 // show all emails in database
@@ -27,7 +36,11 @@ async fn create_the_message(list_senders: Vec<String>, message : String) -> Stri
     }    result 
 }
 
-async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): Json<Email>) -> String{
+async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): Json<EmailReceived>) -> String{
+    let date: String= Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    
+    let email_database = Email{to: email.to.clone(), header: email.header.clone(), message: email.message.clone(), senders: email.senders.clone(), group_signature: email.group_signature.clone(), date: date.clone()};
+
     let to_addr  = email.to.clone().unwrap_or_else(|| "sansome-talk@0xparc.org".into());
     let subject   = email.header.clone();      // or borrow &email.header
     let pb_signals = match create_pb_signals(email.senders.clone(), &email.message.clone()).await {
@@ -44,14 +57,14 @@ async fn receive_email(State(database_conn): State<EmailDatabase>, Json(email): 
     match flag {
         Ok(body) => { 
             if body {
-                let email_id = insert_email_to_database(&database_conn.lock().unwrap(), &email).unwrap();
+                let email_id = insert_email_to_database(&database_conn.lock().unwrap(), &email_database).unwrap();
                 
                 let letter = Message::builder()
                                     .from("kudos@0xparc.org".parse().unwrap())
                                     .to(to_addr.parse().unwrap())
                                     .subject(subject)
                                     .header(header::ContentType::TEXT_PLAIN)
-                                    .body(text + &format!("\n \n Date: {} \n Email id: {} \n \n Group Signature: {} \n (Trust us bro)", email.date, email_id, &email.group_signature))
+                                    .body(text + &format!("\n \n Date: {} \n Email id: {} \n \n Group Signature: {} \n (Trust us bro)", date, email_id, &email.group_signature))
                                     .unwrap();
                 let creds = Credentials::new("kudos@0xparc.org".into(), "szmi aljp ugko evld".into());
                 let mailer = SmtpTransport::relay("smtp.gmail.com").unwrap().credentials(creds).build();
