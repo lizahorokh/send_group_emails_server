@@ -19,3 +19,5 @@ tokio = { version = "1", features = ["full"] }
 ark-ec      = "0.5"   # ← new
 anyhow      = "1"     # ← new
 panic = "0.4.0"
+pod2 = { git="https://github.com/0xPARC/pod2", rev="115c3c11524a0426a1b74db26ea0c78bf90bddb8", features = ["time"]}
+plonky2 = { git = "https://github.com/0xPolygonZero/plonky2"}
